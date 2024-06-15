@@ -1,44 +1,112 @@
 ## Usage
 
-### Verify
+### Build index
 
 ```
-nsync verify [dir]
+nsync build-index [directory] [--only <wildcards list>]
 ```
 
-Traverses `dir`, computing the checksum of each file, compares them against the ones stored in the
-current snapshot, reports the result, and produces a new snapshot with the updated checksums if any
-changes were found.
+Creates an index file containing the path, size, and checksum of all files under [directory]. This
+index file is later used to check files for changes or corruption, and for fast syncs.
 
-If `dir` is not specified, the current directory is used.
+[directory] defaults to the current directory if not specified.
 
-The report puts files in one of the following categories:
-* "added": The current snapshot doesn't contain a checksum for this file. It will be included in the
-  updated snapshot.
-* "changed": The file's checksum differs from the one stored in the current snapshot. The updated
-  snapshot will contain the new checksum.
-* "unchanged": The file's checksum matches the one in the current snapshot.
-* "deleted": The current snapshot contains a checksum for this file, but it was not found while
-  traversing the directory. The checksum will be removed in the updated snapshot.
-
-Even if changes are detected, this command doesn't modify the current snapshot; it is preserved so
-that its contents can be used to examine the changes. A new snapshot is created instead, containing
-all detected changes. The following commands make use of this new snapshot:
-* `nsync show-changes`, to display the same report as this command, but instantaneously, without the
-  need to traverse the directory again and compute checksums.
-* `nsync commit-changes`, to replace the original snapshot with the updated one, thus making the
-  changes the new official baseline.
-
-###
+If `--only` is present, limits the indexing to the files matching a wildcard in the list.
 
 ```
-nsync show-changes [dir]
+Implementation hints:
+- if previous index:
+  - create backup copy of previous index
+  - show summary of detected changes: no. files new, modified deleted
+  - create detected changes report file
+- if no previous index:
+  - show summary: no. indexed files
 ```
 
-Shows a report of the changes betweenk
-
-###
+### Check integrity
 
 ```
-nsync commit-changes [dir]
+nsync verify-against-index [directory] [--only <wildcards list>]
+```
+
+Recomputes the checksums of all files in [directory] and compares them against the checksums stored
+in the index file. Useful for detecting bit rot and corruption, as well as intentional changes that
+have not yet been reflected in the index file.
+
+Detected changes are stored to a file which can be used to examine them again, or to apply them to
+the index file.
+
+[directory] defaults to the current directory if not specified.
+
+If `--only` is present, limits the checking to the files matching a wildcard in the list.
+
+```
+Implementation hints:
+- fail when index file is missing
+- output summary of detected changes: no. files new, modified, deleted
+- create detected changes file
+```
+
+### Update index
+
+```
+nsync commit-changes-to-index [directory]
+```
+
+Uses the changes file produced by `nsync verify-against-index` to update the index file. Use this
+when you've determined that all changes detected by `verify-against-index` are intentional and not
+a sign of data corruption.
+
+[directory] defaults to the current directory if not specified.
+
+```
+Implementation hints:
+- fail when index file is missing
+- fail when changes file is missing
+- output summary of changes: no. entries added, modified, deleted
+- store detailed list of changes to a report file
+```
+
+### Fast sync
+
+```
+nsync fast <source dir> <destination dir> [--only <wildcards list>] [--dry-run]
+```
+
+Uses the index files in both source and destination directories to quickly determine which files
+from the source need to be synced to the destination, and syncs them. Expects that both source and
+destination directories have up-to-date index files. Updates the index in the destination.
+
+If `--only` is present, limits the sync to the files matching a wildcard in the list.
+
+If `--dry-run` is present, doesn't change anything in destination, only shows a list of all changes
+that would be made without `--dry-run`.
+
+```
+Implementation hints:
+- fail when index file is missing in source or dest dir
+- output summary of changes: no. files created, modified, deleted
+- update dest index
+- store detailed list of changes to a report file
+```
+
+### Full sync
+
+```
+nsync full <source dir> <destination dir> [--only <wildcards list>] [--dry-run]
+```
+
+Copies all files from source to destination and creates or updates the index file at the
+destination.
+
+If `--only` is present, limits the sync to the files matching a wildcard in the list.
+
+If `--dry-run` is present, doesn't change anything in destination, only shows a list of all changes
+that would be made without `--dry-run`.
+
+```
+Implementation hints:
+- create/update dest index
+- output summary of changes: no. files created, modified, deleted
+- store detailed list of changes to a report file
 ```
